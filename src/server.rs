@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::io::{Read, Write};
 use std::str;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
@@ -101,28 +102,38 @@ fn handle_client(mut stream: TcpStream, mut state: SharedState, idclient:i32) {
                 Ok(n) => Begin= n.as_secs(),
                 Err(_) => panic!("SystemTime not working!"),
             }
-
-            while let gs=gamestate(&whichroom, &state, idclient)!=1 {
-                let mut TimeNow:u64=0;
-                match SystemTime::now().duration_since(UNIX_EPOCH) {
-                    Ok(n) => Begin= n.as_secs(),
+            loop {
+                let gs = gamestate(&whichroom, &state, idclient);
+                if gs == 1 {
+                    let message = "Another player joined. Game starts now.\n";
+                    stream.write_all(message.as_bytes()).expect("Failed to write to stream");
+                    break;
+                }
+        
+                let time_now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+                    Ok(n) => n.as_secs(),
                     Err(_) => panic!("SystemTime not working!"),
+                };
+        
+                if time_now - Begin > 300 {
+                    let message = "Waited too long. Ending application\n";
+                    stream.write_all(message.as_bytes()).expect("Failed to write to stream");
+                    return;
                 }
-                if TimeNow-Begin>300 {
-                    let mess="Waited too long. Ending application\n";
-                    stream.write_all(mess.as_bytes()).expect("Failed to write to stream");
-                    return ;
-                }
+        
+                // Sleep for a short duration to prevent the loop from consuming too much CPU
+                thread::sleep(Duration::from_millis(100));
             }
         }
         else {
             playing_with_computer=1;
         }
     }
-
-    //Now, it's game time :0
-    let mess="Game time\n";
-    stream.write_all(mess.as_bytes()).expect("Failed to write to stream");
+    else{
+        //Now, it's game time :0
+        let mess="Game time\n";
+        stream.write_all(mess.as_bytes()).expect("Failed to write to stream");
+    }
     
 }
 
