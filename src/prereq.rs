@@ -1,4 +1,17 @@
-
+pub fn str_to_int(a:&str) -> i32{
+    let mut nr=0;
+    let mut maybenotpossible=true;
+    for ch in a.chars() {
+        if ch.is_numeric(){
+            maybenotpossible=false;
+            nr=nr*10+(ch as u8 -'0' as u8) as i32;
+        }
+    }
+    if maybenotpossible {
+        return -1;
+    }
+    return nr;
+}
 pub struct BasicMessages{
     youwon:String,
     youlost:String,

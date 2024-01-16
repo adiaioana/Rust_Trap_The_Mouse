@@ -1,3 +1,5 @@
+use macroquad::miniquad::MouseButton;
+
 
 
 
@@ -20,21 +22,16 @@ pub struct Board{
     pub matrix:[[Cell;15];15],
     pub mouse_pos:(i32,i32),
 }
-pub fn any_difference(a:&Board, b:&Board) -> bool {
-    for i in 1..12 {
-        for j in 1..12{
-            if a.matrix[i as usize][j as usize].prop!=b.matrix[i as usize][j as usize].prop {
-                return true;
-            }
-        }
-    }
-    return false;
-}
 pub fn gameboard_state(a:&Board) -> char{
     // 0 - no win; 1 - player 1 won; 2 - player 2 won
-    let sor=a.mouse_pos;
-    if sor.0*sor.1 ==0 || sor.0>11 || sor.1>11 {
-        return 'M';
+    for i in 1..12{
+        for j in 1..12{
+        if a.matrix[i as usize][j as usize].prop==Cellprop::Mouse{
+            if i==1 || j==1 || i==11 || j==11 {
+                return 'M';
+            }
+        }
+        }
     }
 
     for diri in 1..6  {
@@ -69,7 +66,9 @@ impl Board{
         Board{dimcol:11, dimlin:11, matrix:mat, mouse_pos:(6,6)}
     }
 
-
+    pub fn get_prop(&self, pos:(i32,i32)) -> Cellprop {
+        return self.matrix[pos.0 as usize][pos.1 as usize].prop;
+    }
     pub fn make_wall(&mut self, pos:(i32,i32)) -> bool {
         println!("OKKKKK, deci pe pozitia {}, {}: e exact {:?}",pos.0,pos.1,(*self).matrix[pos.0 as usize][pos.1 as usize].prop);
         if (*self).matrix[pos.0 as usize][pos.1 as usize].prop as isize == 0 {
@@ -120,7 +119,11 @@ impl Board{
         }
         newsor.0=newsor.0+dx[dir as usize];
         newsor.1=newsor.1+dy[dir as usize];
-        
+        if newsor.0<1 || newsor.1<1 || newsor.1>11 || newsor.0>11 {
+            println!("Mouse moves out of bounds:{},{};",newsor.0,newsor.1);
+            return false;
+        }
+
         if (*self).matrix[newsor.0 as usize][newsor.1 as usize].prop as isize == 0 {
             (*self).matrix[sor.0 as usize][sor.1 as usize].prop=Cellprop::Free;
             (*self).matrix[newsor.0 as usize][newsor.1 as usize].prop=Cellprop::Mouse;
