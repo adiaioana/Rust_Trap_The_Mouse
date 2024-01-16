@@ -1,32 +1,34 @@
+mod board;
+mod prereq;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::io::{Read, Write};
 use macroquad::prelude::*;
-use board::Board;
 use std::str;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
-
+use board::{Board,gameboard_state, any_difference};
+use prereq::BasicMessages;
 #[derive(Clone)]
 struct Room {
-    RoomNb: i32,
-    RoomName: String,
-    Player1: i32,
-    Player2: i32,
-    GameState: i32,
+    room_nb: i32,
+    room_name: String,
+    player1: i32,
+    player2: i32,
+    game_state: i32,
+    game_board: Board
 }
 impl Room{
     pub fn new() -> Self {
-        Room{RoomNb:0, RoomName:String::from(" "),Player1:0,Player2:0,GameState:0}
+        Room{room_nb:0, room_name:String::from(" "),player1:0,player2:0,game_state:0, game_board:Board::new()}
     }
 }
 
 type SharedState = Arc<Mutex<HashMap<String, Room>>>;
 ///
-fn room_handling_for_client(mut buffer:[u8;1024], mut state: SharedState, idclient:i32) -> String{ 
+fn room_handling_for_client( buffer:[u8;1024], state: SharedState, idclient:i32) -> String{ 
     let cpy_buff=str::from_utf8(&buffer).unwrap();
     let recv_mess=parse_message(&cpy_buff);
     let arg1:&str=&recv_mess.0.as_str();
@@ -34,7 +36,7 @@ fn room_handling_for_client(mut buffer:[u8;1024], mut state: SharedState, idclie
     let mess=process_room_request(arg1, arg2, &state, idclient);
     mess
 }
-fn GetClientOption(stream: &mut TcpStream, state: &SharedState) -> char {
+fn get_client_option(stream: &mut TcpStream) -> char {
     let mut buffer = [0; 1024];
     let prompt = "\nDo you want to wait for another player(W) or play with the computer(C)? [W/C]\n";
     stream.write_all(prompt.as_bytes()).expect("Failed to write to stream");
@@ -55,7 +57,6 @@ fn GetClientOption(stream: &mut TcpStream, state: &SharedState) -> char {
 
         if input.contains('W') {
             option = 'W';
-            let message = "Will be waiting for another player...\n";
             break;
         } else if input.contains('C') {
             option = 'C';
@@ -71,12 +72,16 @@ fn GetClientOption(stream: &mut TcpStream, state: &SharedState) -> char {
     }
 
 
-fn handle_client(mut stream: TcpStream, mut state: SharedState, idclient:i32) {
-    ///Step 1: Join a room
-    let type_of_pawn=0;
+fn handle_client(mut stream: TcpStream, state: SharedState, idclient:i32) {
+    //Step 1: Join a room
+    let mut type_of_pawn=0;
     let mut buffer = [0; 1024]; let mut whichroom=String::from("");
-    while let bytes_read = stream.read(&mut buffer).expect("Failed to read from stream") >0 {
-        let mut mess=room_handling_for_client(buffer, state.clone(), idclient);
+    loop{
+        let bytes_read = stream.read(&mut buffer).expect("Failed to read from stream");
+        if bytes_read==0 {
+            break;
+        }
+        let mess=room_handling_for_client(buffer, state.clone(), idclient);
         if mess.contains("Succesfully joined") {
             
             let mut ind:i32=0;
@@ -94,19 +99,19 @@ fn handle_client(mut stream: TcpStream, mut state: SharedState, idclient:i32) {
         buffer=[0; 1024];  //Sending room entering status
     }   
     let mut playing_with_computer=0;
-    ///Wait/Play(w Player/Computer)
-    let gs=gamestate(&whichroom, &state, idclient);
+    //Wait/Play(w Player/Computer)
+    let gs=game_state(&whichroom, &state);
     if gs==0 {
         //Option to wait or to play with computer
-        let client_option= GetClientOption(&mut stream,&state);
+        let client_option= get_client_option(&mut stream);
         if client_option=='W' {
-            let mut Begin=0;
+            let mut begin=0;
             match SystemTime::now().duration_since(UNIX_EPOCH) {
-                Ok(n) => Begin= n.as_secs(),
+                Ok(n) => begin= n.as_secs(),
                 Err(_) => panic!("SystemTime not working!"),
             }
             loop {
-                let gs = gamestate(&whichroom, &state, idclient);
+                let gs = game_state(&whichroom, &state);
                 if gs == 1 {
                     let message = "Another player joined. Game starts now.\n";
                     stream.write_all(message.as_bytes()).expect("Failed to write to stream");
@@ -118,7 +123,7 @@ fn handle_client(mut stream: TcpStream, mut state: SharedState, idclient:i32) {
                     Err(_) => panic!("SystemTime not working!"),
                 };
         
-                if time_now - Begin > 300 {
+                if time_now - begin > 300 {
                     let message = "Waited too long. Ending application\n";
                     stream.write_all(message.as_bytes()).expect("Failed to write to stream");
                     return;
@@ -131,18 +136,87 @@ fn handle_client(mut stream: TcpStream, mut state: SharedState, idclient:i32) {
         else {
             playing_with_computer=1;
         }
-        type_of_pawn=1;
+        type_of_pawn=1; //Wall
     }
     else{
         //Now, it's game time :0
-        type_of_pawn=2;
+        type_of_pawn=2; //Mouse
         let mess="Game time\n";
         stream.write_all(mess.as_bytes()).expect("Failed to write to stream");
     }
 
-    
-    let mut game_board:Board=Board::new();
-    
+    let output=BasicMessages::new();
+    let mut game_board:Board=Board::new();//game_board should be the one from the Rooms struct 
+    let mut game_board_cache=Board::new();
+    let mut the_end=false;
+    let turns:Vec<char>=vec!['-','W','M'];
+    if type_of_pawn==1 {
+        game_board_cache.make_wall((1,1));
+    }
+    loop {
+        if the_end {
+            break;
+        }
+        let game_aux:Board=game_board.clone();
+        let ifwinner=gameboard_state(&game_aux);
+        match ifwinner {
+            'W' => {
+                the_end=true;
+                if type_of_pawn==2 {
+                    stream.write_all(output.lostmess().as_bytes()).expect("Failed to write to stream");
+                }
+                else {
+                    stream.write_all(output.wonmess().as_bytes()).expect("Failed to write to stream");
+                }
+            }
+            'M' => {
+                the_end=true;
+                if type_of_pawn==1 {
+                    stream.write_all(output.lostmess().as_bytes()).expect("Failed to write to stream");
+                }
+                else {
+                    stream.write_all(output.wonmess().as_bytes()).expect("Failed to write to stream");
+                }
+            }
+            _ =>{
+                //flag: add mutex
+                if any_difference(&game_board, &game_board_cache) {
+                    //means a move was done, so amazing
+                    if type_of_pawn ==2 {
+                        stream.write_all(output.movemousemess().as_bytes()).expect("Failed to write to stream");
+                    }
+                    else{
+                        stream.write_all(output.placewallmess().as_bytes()).expect("Failed to write to stream");
+                    }
+                    buffer=[0;1024];
+                    let bytes_read = stream.read(&mut buffer).expect("Failed to read from stream");
+                    if bytes_read==0 {
+                        println!("Error: not reading move");
+                    }
+                    //update moves string 
+                    let mut ind:i32=0;
+                    let mut var:Vec<i32>=Vec::new();
+                    for word in str::from_utf8(&buffer).unwrap().split_whitespace() {
+                        ind=ind+1;
+                        var.push(word.parse().unwrap());
+                    }
+
+                    if type_of_pawn ==2{
+                        game_board.move_mouse(var[0]);
+                    }
+                    else {
+                        game_board.make_wall((var[0],var[1]));
+                    }
+                }
+                stream.write_all(game_board.translate_to_moves(turns[type_of_pawn]).as_bytes()).expect("Failed to write to stream");
+                if playing_with_computer!=0 {
+                    //Computer makes random move
+                }
+                game_board_cache=game_board.clone();
+            }
+        }
+
+    }
     
 }
 
@@ -151,7 +225,7 @@ fn main() {
     let listener = TcpListener::bind("127.0.0.1:7878").expect("Failed to bind to address");
     let state = Arc::new(Mutex::new(HashMap::new()));
 
-    for mut stream in listener.incoming() {
+    for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let state_clone = state.clone();
@@ -164,17 +238,17 @@ fn main() {
         }
         }
         }
-        fn gamestate(room_name: &str, state: &SharedState, idc: i32)->i32 {
-            let mut rooms = state.lock().unwrap();
+        fn game_state(room_name: &str, state: &SharedState)->i32 {
+            let rooms = state.lock().unwrap();
             for it in rooms.iter() {
                 if it.0.contains(room_name) {
-                    return it.1.GameState;
+                    return it.1.game_state;
                 }
             }
             return -1;
         }
-        fn parse_message(msg: &str) -> (String, String) { ///
-            let s:String=msg.to_string();
+        fn parse_message(msg: &str) -> (String, String) { // verified
+            
             if (&msg).contains("create") {
                 let mut whichroom=String::from("auleu");
                 for word in msg.split_whitespace(){
@@ -205,8 +279,8 @@ fn main() {
         }
         fn print_all_rooms(rooms:&HashMap<String,Room>) {
             for roomy in rooms.iter() {
-                println!("Room with name {} has id {} with player1={},player2={} and gamestate={}", 
-                roomy.0,roomy.1.RoomNb, roomy.1.Player1,roomy.1.Player2,roomy.1.GameState);
+                println!("Room with name {} has id {} with player1={},player2={} and game_state={}", 
+                roomy.0,roomy.1.room_nb, roomy.1.player1,roomy.1.player2,roomy.1.game_state);
             }
         }
         fn process_room_request(command: &str, room_name: &str, state: &SharedState, idc: i32) -> String{
@@ -216,36 +290,36 @@ fn main() {
             "create" => {
                 // Create a new room and add it to the global state
                 let lg=rooms.len();
-                let mut A: Room=Room{RoomNb:lg as i32, RoomName:String::from(room_name),Player1:0,Player2:0,GameState:0};
-                rooms.insert(room_name.to_string(),A);
+                let a: Room=Room{room_nb:lg as i32, room_name:String::from(room_name),player1:0,player2:0,game_state:0, game_board:Board::new()};
+                rooms.insert(room_name.to_string(),a);
                 let ans=String::from("Succesfully created room: ");
                 return ans+room_name;
             }
             "join" => {
                 let mut ok:bool=false;
-                let mut A:Room=Room::new();
+                let mut a:Room=Room::new();
                 for it in rooms.iter() {
                     if it.0.contains(room_name) {
                         ok=true;
-                        A=it.1.clone();
-                        if A.Player1==0 {
-                            A.Player1=idc;
+                        a=it.1.clone();
+                        if a.player1==0 {
+                            a.player1=idc;
                         }
                         else{
-                            A.Player2=idc;
-                            A.GameState=1;
+                            a.player2=idc;
+                            a.game_state=1;
                         }
                         break;
                     }
                 }
                 // verifica daca exista camera
                 if let false=ok {
-                    let ans=String::from("Unknown room, not able to join. Please [create]/[join roomname]/[print rooms] room.");
+                    let ans=String::from("Unknown room, not able to join. Please [create]/[join room_name]/[print rooms] room.");
                     return ans;
                 }
                 else {
                     rooms.remove(room_name);
-                    rooms.insert(room_name.to_string(), A);
+                    rooms.insert(room_name.to_string(), a);
                     //SendSuccessMessage();
                     //JoinRoom();
                     let ans=String::from("Succesfully joined: ");
@@ -259,7 +333,7 @@ fn main() {
             }
             _ => {
                 // unknown command
-                let ans=String::from("Unknown command, please [create]/[join roomname] room.\n");
+                let ans=String::from("Unknown command, please [create]/[join room_name] room.\n");
                 return ans;
             }
         }
