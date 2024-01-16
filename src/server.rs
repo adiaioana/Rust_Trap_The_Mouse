@@ -4,6 +4,8 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::io::{Read, Write};
+use macroquad::prelude::*;
+use board::Board;
 use std::str;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -71,6 +73,7 @@ fn GetClientOption(stream: &mut TcpStream, state: &SharedState) -> char {
 
 fn handle_client(mut stream: TcpStream, mut state: SharedState, idclient:i32) {
     ///Step 1: Join a room
+    let type_of_pawn=0;
     let mut buffer = [0; 1024]; let mut whichroom=String::from("");
     while let bytes_read = stream.read(&mut buffer).expect("Failed to read from stream") >0 {
         let mut mess=room_handling_for_client(buffer, state.clone(), idclient);
@@ -128,12 +131,18 @@ fn handle_client(mut stream: TcpStream, mut state: SharedState, idclient:i32) {
         else {
             playing_with_computer=1;
         }
+        type_of_pawn=1;
     }
     else{
         //Now, it's game time :0
+        type_of_pawn=2;
         let mess="Game time\n";
         stream.write_all(mess.as_bytes()).expect("Failed to write to stream");
     }
+
+    
+    let mut game_board:Board=Board::new();
+    
     
 }
 
