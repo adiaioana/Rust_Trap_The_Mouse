@@ -1,7 +1,18 @@
-use macroquad::miniquad::MouseButton;
 
-
-
+pub fn str_to_int(a:&str) -> i32{
+    let mut nr=0;
+    let mut maybenotpossible=true;
+    for ch in a.chars() {
+        if ch.is_numeric(){
+            maybenotpossible=false;
+            nr=nr*10+(ch as u8 -'0' as u8) as i32;
+        }
+    }
+    if maybenotpossible {
+        return -1;
+    }
+    return nr;
+}
 
 #[derive(Clone,Copy,Eq, PartialEq,Debug)]
 pub enum Cellprop{
@@ -24,14 +35,9 @@ pub struct Board{
 }
 pub fn gameboard_state(a:&Board) -> char{
     // 0 - no win; 1 - player 1 won; 2 - player 2 won
-    for i in 1..12{
-        for j in 1..12{
-        if a.matrix[i as usize][j as usize].prop==Cellprop::Mouse{
-            if i==1 || j==1 || i==11 || j==11 {
-                return 'M';
-            }
-        }
-        }
+    let sor=a.mouse_pos;
+    if sor.0*sor.1 ==0 || sor.0>11 || sor.1>11 {
+        return 'M';
     }
 
     for diri in 1..6  {
@@ -70,11 +76,19 @@ impl Board{
         return self.matrix[pos.0 as usize][pos.1 as usize].prop;
     }
     pub fn make_wall(&mut self, pos:(i32,i32)) -> bool {
-        println!("OKKKKK, deci pe pozitia {}, {}: e exact {:?}",pos.0,pos.1,(*self).matrix[pos.0 as usize][pos.1 as usize].prop);
-        if (*self).matrix[pos.0 as usize][pos.1 as usize].prop as isize == 0 {
-            (*self).matrix[pos.0 as usize][pos.1 as usize].prop=Cellprop::Wall;
-            return true;
+
+        
+        if pos.0<0 || pos.1<0 || pos.0>12 || pos.1>12 {
+            println!("Out of bounds at making wall>{},{};",pos.0,pos.1);
         }
+        else{
+            //println!("OKKKKK, deci pe pozitia {}, {}: e exact {:?}",pos.0,pos.1,(*self).matrix[pos.0 as usize][pos.1 as usize].prop);
+            if (*self).matrix[pos.0 as usize][pos.1 as usize].prop as isize == 0 {
+                (*self).matrix[pos.0 as usize][pos.1 as usize].prop=Cellprop::Wall;
+                return true;
+            }
+        }
+        
         return false;
     } 
 
@@ -119,6 +133,7 @@ impl Board{
         }
         newsor.0=newsor.0+dx[dir as usize];
         newsor.1=newsor.1+dy[dir as usize];
+        
         if newsor.0<1 || newsor.1<1 || newsor.1>11 || newsor.0>11 {
             println!("Mouse moves out of bounds:{},{};",newsor.0,newsor.1);
             return false;
@@ -135,8 +150,13 @@ impl Board{
     }
     pub fn set_mouse(&mut self, newsor:(i32,i32)) {
         self.matrix[self.mouse_pos.0 as usize][self.mouse_pos.1 as usize].prop=Cellprop::Free;
-        (*self).matrix[newsor.0 as usize][newsor.1 as usize].prop=Cellprop::Mouse;
-        self.mouse_pos=newsor;
+        if(newsor.0<0 || newsor.1<0 || newsor.0>12 || newsor.1>12) {
+            println!("Can't move mouse");
+        }
+        else{
+            (*self).matrix[newsor.0 as usize][newsor.1 as usize].prop=Cellprop::Mouse;
+            self.mouse_pos=newsor;
+        }
 
     }
     pub fn print_for_debug(&self) {
@@ -190,24 +210,26 @@ impl Board{
         let mut wx=0;
         let mut wy;
         for wrd in newboardmove.split(['{','}',',']) {
-            if ind==0 {
-                //who moved
-            }
-            else if ind==1{
-                //who won
-            }
-            else {
-                wy=wrd.parse().unwrap();
-                if ind%2==1 && ind/2>1 {
-                    nb.make_wall((wx,wy));
+            if wrd.len()>0 {
+                if ind==0 {
+                    //who moved
                 }
-                else if ind%2==1 {
-                    //mouse
-                    nb.set_mouse((wx,wy));
+                else if ind==1{
+                    //who won
                 }
-                wx=wrd.parse().unwrap();
+                else {
+                    wy=str_to_int(wrd);
+                    if ind%2==1 && ind/2>1 {
+                        nb.make_wall((wx,wy));
+                    }
+                    else if ind%2==1 {
+                        //mouse
+                        nb.set_mouse((wx,wy));
+                    }
+                    wx=str_to_int(wrd);
+                }
+                ind=ind+1;
             }
-            ind=ind+1;
         }
         for i in 1..12{
             for j in 1..12{

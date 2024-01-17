@@ -5,9 +5,9 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::io::{Read, Write};
-use macroquad::prelude::*;
 use std::str;
 use std::time::Duration;
+use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
 use board::{Board,gameboard_state};
 use prereq::{BasicMessages,str_to_int};
@@ -237,11 +237,17 @@ fn handle_client(mut stream: TcpStream, state: SharedState, idclient:i32) {
                     push_gameboard(&whichroom, &state, &game_board);
                     // switch_turn(&whichroom, &state);
                     stream.write_all(game_board.clone().translate_to_moves(turns[type_of_pawn as usize]).as_bytes()).expect("Failed to write to stream");
-                    
+                    if playing_with_computer!=0 {
+
+                        let mut rng = rand::thread_rng(); 
+                        let number = rng.gen_range(1..=6);
+                        game_board.move_mouse(number);
+                        push_gameboard(&whichroom, &state, &game_board);
+                        //Computer makes random move
+                    }
+                
                 }
-                if playing_with_computer!=0 {
-                    //Computer makes random move
-                }
+                
             }
         }
     }
@@ -250,7 +256,7 @@ fn handle_client(mut stream: TcpStream, state: SharedState, idclient:i32) {
 
 fn main() {
     let mut no_clients=0;
-    let listener = TcpListener::bind("127.0.0.1:7878").expect("Failed to bind to address");
+    let listener = TcpListener::bind("127.0.0.1:7777").expect("Failed to bind to address");
     let state = Arc::new(Mutex::new(HashMap::new()));
 
     for stream in listener.incoming() {
