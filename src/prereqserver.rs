@@ -4,13 +4,13 @@ pub fn str_to_int(a:&str) -> i32{
     for ch in a.chars() {
         if ch.is_numeric(){
             maybenotpossible=false;
-            nr=nr*10+(ch as u8 -'0' as u8) as i32;
+            nr=nr*10+(ch as u8 -b'0') as i32;
         }
     }
     if maybenotpossible {
         return -1;
     }
-    return nr;
+    nr
 }
 pub struct BasicMessages{
     youwon:String,
